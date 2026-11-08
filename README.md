@@ -8,6 +8,7 @@ A Claude Code plugin that compacts the conversation **while a session is running
 
 - **Triggers on the 5-hour usage window**, not on context size. It reads the same figures the status line shows.
 - **Pause → compact → resume.** If a turn is running, it ends the turn at a safe point: after the current tool call finishes and before the next model request. No command or file write is cut off. After compacting, it sends a message asking Claude to continue the previous task.
+- **A note in the terminal.** After each compaction the transcript gets one dim line saying whether it compacted, was skipped or failed, and whether a turn was paused. Only you see it; it is not sent to the model.
 - **Subagents don't block it.** While the plugin is on, subagents started by the main session run in the background. The main session can pause and compact while they keep working.
 - **Once per window.** Each session compacts at most once per 5-hour window. It triggers again after the window resets.
 - **Persistent settings.** `/quota-compact` turns it on or off and sets the percentage. The setting applies to every session and survives restarts, like `/autocompact`.

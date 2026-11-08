@@ -1,6 +1,6 @@
 {
   "name": "quota-compact",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Pauses, compacts and resumes the running Claude Code session when the 5-hour rate-limit window reaches a set percentage.",
   "author": { "name": "hxy920830", "email": "hxy920830@163.com" },
   "homepage": "https://github.com/hxy920830/quota-compact",

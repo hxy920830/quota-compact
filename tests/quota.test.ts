@@ -22,6 +22,7 @@ test('compacts once per 5-hour window, from 98%', async ($, on) => {
   let compactions = 0
   on('clock.after', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
+  on('ui.log', () => ({ value: undefined }))
   on('session.measure', (_, e) => ({ changed: e.changed }))
   on('session.compact', () => {
     compactions += 1
@@ -49,6 +50,7 @@ test('tries again while a turn is running', async ($, on) => {
   let tries = 0
   on('clock.after', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
+  on('ui.log', () => ({ value: undefined }))
   on('session.measure', (_, e) => ({ changed: e.changed }))
   on('session.compact', () => {
     tries += 1
@@ -65,6 +67,7 @@ test('gives up on a window that never compacts', async ($, on) => {
   let tries = 0
   on('clock.after', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
+  on('ui.log', () => ({ value: undefined }))
   on('session.measure', (_, e) => ({ changed: e.changed }))
   on('session.compact', () => {
     tries += 1
@@ -81,6 +84,7 @@ test('mid-turn: pauses at the next request, compacts, then resumes', async ($, o
   const log: string[] = []
   on('clock.after', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
+  on('ui.log', () => ({ value: undefined }))
   on('session.measure', (_, e) => ({ changed: e.changed }))
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.step', async function* (_, e) {
@@ -119,8 +123,13 @@ test('mid-turn: pauses at the next request, compacts, then resumes', async ($, o
 
 const pauseAndCompact = async ($: EngineInterface, on: On, compact: () => never) => {
   const resumes: string[] = []
+  const lines: string[] = []
   on('clock.after', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
+  on('ui.log', (_, e) => {
+    lines.push(e.text)
+    return { value: undefined }
+  })
   on('session.measure', (_, e) => ({ changed: e.changed }))
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.step', async function* (_, e) {
@@ -142,24 +151,47 @@ const pauseAndCompact = async ($: EngineInterface, on: On, compact: () => never)
   await $.turn.complete({ turnId: 't1', reason: 'aborted', answer: '', durationMs: 1, isAborted: true } as never)
   await settle()
   await settle()
-  return resumes
+  return { resumes, lines }
 }
 
 test('the resume message says the context was compacted when it was', async ($, on) => {
-  const resumes = await pauseAndCompact($, on, () => COMPACTED as never)
+  const { resumes, lines } = await pauseAndCompact($, on, () => COMPACTED as never)
   expect(resumes).toHaveLength(1)
   expect(resumes[0]).toContain('并自动压缩了上下文')
+  expect(lines).toEqual(['quota-compact：5 小时额度已达 98%，已自动压缩上下文（已暂停当前回合，并让 Claude 继续）'])
+})
+
+test('an idle compaction leaves a transcript line for the person', async ($, on) => {
+  const lines: string[] = []
+  let resumes = 0
+  on('clock.after', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('ui.log', (_, e) => {
+    lines.push(e.text)
+    return { value: undefined }
+  })
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  on('session.compact', () => COMPACTED as never)
+  on('prompt.submit', (_, e) => {
+    resumes += 1
+    return { text: e.text }
+  })
+
+  await $.session.measure(measure(98) as never)
+  await settle()
+  expect(lines).toEqual(['quota-compact：5 小时额度已达 98%，已自动压缩上下文（没有暂停回合）'])
+  expect(resumes).toBe(0)
 })
 
 test('the resume message says a skipped compaction did not happen', async ($, on) => {
-  const resumes = await pauseAndCompact($, on, () => ({ skip: 'too short' }) as never)
+  const { resumes } = await pauseAndCompact($, on, () => ({ skip: 'too short' }) as never)
   expect(resumes).toHaveLength(1)
   expect(resumes[0]).toContain('压缩被跳过（too short），上下文没有被压缩')
   expect(resumes[0]).not.toContain('并自动压缩了上下文')
 })
 
 test('the resume message says a failed compaction did not happen', async ($, on) => {
-  const resumes = await pauseAndCompact($, on, () => {
+  const { resumes } = await pauseAndCompact($, on, () => {
     throw new Error('refused')
   })
   expect(resumes).toHaveLength(1)
@@ -171,6 +203,7 @@ test('mid-turn: a turn that ends by itself is compacted without a resume', async
   const log: string[] = []
   on('clock.after', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
+  on('ui.log', () => ({ value: undefined }))
   on('session.measure', (_, e) => ({ changed: e.changed }))
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_, e) => ({ text: e.answer, reason: e.reason }) as never)
@@ -203,6 +236,7 @@ test('the command switches it off and sets the percentage, kept in the store', a
   let compactions = 0
   on('clock.after', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
+  on('ui.log', () => ({ value: undefined }))
   on('store.get', (_, e) => ({ value: store.get((e as { key: string }).key) }))
   on('store.set', (_, e) => {
     const { key, value } = e as { key: string; value: unknown }

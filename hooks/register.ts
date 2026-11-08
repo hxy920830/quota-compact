@@ -67,6 +67,10 @@ async function finish($: EngineInterface, key: string, note: string, outcome: st
   pending = null
   await update($, doneFor, () => key).catch(() => undefined)
   $.ui.toast(note)
+  // A dim transcript line that stays on screen; the model never reads it.
+  $.ui.log(
+    `quota-compact：${note}${shouldResume ? '（已暂停当前回合，并让 Claude 继续）' : '（没有暂停回合）'}`,
+  )
   if (shouldResume) {
     shouldResume = false
     await $.prompt.submit({ text: resumeText(outcome) })
