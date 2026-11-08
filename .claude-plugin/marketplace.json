@@ -1,0 +1,15 @@
+{
+  "name": "quota-compact",
+  "description": "quota-compact: auto-compacts a running Claude Code session at a 5-hour usage threshold.",
+  "owner": {
+    "name": "hxy920830",
+    "email": "hxy920830@163.com"
+  },
+  "plugins": [
+    {
+      "name": "quota-compact",
+      "source": "./",
+      "description": "Pauses, compacts and resumes the running Claude Code session when the 5-hour rate-limit window reaches a set percentage."
+    }
+  ]
+}
