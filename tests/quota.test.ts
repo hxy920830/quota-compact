@@ -1,4 +1,7 @@
 import { expect, test } from 'claude-code/testing'
+import type { EngineInterface, Register } from 'claude-code'
+
+type On = Parameters<Register>[0]
 
 const measure = (percentUsed: number, resetsAt = '2026-11-08T12:00:00Z') => ({
   context: { window: 200_000 },
@@ -112,6 +115,56 @@ test('mid-turn: pauses at the next request, compacts, then resumes', async ($, o
   await $.turn.complete({ turnId: 't1', reason: 'aborted', answer: '', durationMs: 1, isAborted: true } as never)
   await settle()
   expect(log).toEqual(['abort', 'step', 'complete', 'compact', 'resume:yes'])
+})
+
+const pauseAndCompact = async ($: EngineInterface, on: On, compact: () => never) => {
+  const resumes: string[] = []
+  on('clock.after', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+  on('turn.step', async function* (_, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null } as never
+  })
+  on('turn.abort', () => ({ value: undefined }))
+  on('turn.complete', () => ({ text: '', reason: 'aborted' }) as never)
+  on('session.compact', compact)
+  on('prompt.submit', (_, e) => {
+    resumes.push(e.text)
+    return { text: e.text }
+  })
+
+  await $.turn.start({ text: 'go', turnId: 't1' } as never)
+  await $.session.measure(measure(98) as never)
+  for await (const _ of $.turn.step({ turnId: 't1', index: 1, model: 'm', messageCount: 3 } as never)) {
+    // no chunks
+  }
+  await $.turn.complete({ turnId: 't1', reason: 'aborted', answer: '', durationMs: 1, isAborted: true } as never)
+  await settle()
+  await settle()
+  return resumes
+}
+
+test('the resume message says the context was compacted when it was', async ($, on) => {
+  const resumes = await pauseAndCompact($, on, () => COMPACTED as never)
+  expect(resumes).toHaveLength(1)
+  expect(resumes[0]).toContain('并自动压缩了上下文')
+})
+
+test('the resume message says a skipped compaction did not happen', async ($, on) => {
+  const resumes = await pauseAndCompact($, on, () => ({ skip: 'too short' }) as never)
+  expect(resumes).toHaveLength(1)
+  expect(resumes[0]).toContain('压缩被跳过（too short），上下文没有被压缩')
+  expect(resumes[0]).not.toContain('并自动压缩了上下文')
+})
+
+test('the resume message says a failed compaction did not happen', async ($, on) => {
+  const resumes = await pauseAndCompact($, on, () => {
+    throw new Error('refused')
+  })
+  expect(resumes).toHaveLength(1)
+  expect(resumes[0]).toContain('自动压缩未能完成，上下文没有被压缩')
+  expect(resumes[0]).not.toContain('并自动压缩了上下文')
 })
 
 test('mid-turn: a turn that ends by itself is compacted without a resume', async ($, on) => {

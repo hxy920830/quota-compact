@@ -44,8 +44,8 @@ async function loadSettings($: EngineInterface) {
   settings = toSettings(await $.store.get(SETTINGS_KEY).catch(() => undefined))
 }
 
-function resumeText() {
-  return `5 小时额度已达 ${settings.threshold}%，刚才的回合已暂停并自动压缩了上下文。请从中断处继续之前的任务。`
+function resumeText(outcome: string) {
+  return `5 小时额度已达 ${settings.threshold}%，刚才的回合已暂停${outcome}。请从中断处继续之前的任务。`
 }
 
 function schedule($: EngineInterface, ms: number) {
@@ -63,13 +63,13 @@ function queue($: EngineInterface, key: string, resume: boolean) {
   schedule($, FIRST_TRY_MS)
 }
 
-async function finish($: EngineInterface, key: string, note: string) {
+async function finish($: EngineInterface, key: string, note: string, outcome: string) {
   pending = null
   await update($, doneFor, () => key).catch(() => undefined)
   $.ui.toast(note)
   if (shouldResume) {
     shouldResume = false
-    await $.prompt.submit({ text: resumeText() })
+    await $.prompt.submit({ text: resumeText(outcome) })
   }
 }
 
@@ -81,18 +81,31 @@ async function attempt($: EngineInterface) {
   try {
     // Rejects while a turn runs: the retry waits for the gap between turns.
     const result = await $.session.compact()
-    await finish(
-      $,
-      key,
-      result.skip === undefined
-        ? `5 小时额度已达 ${settings.threshold}%，已自动压缩上下文`
-        : `5 小时额度已达 ${settings.threshold}%，压缩被跳过：${result.skip}`,
-    )
+    if (result.skip === undefined) {
+      await finish(
+        $,
+        key,
+        `5 小时额度已达 ${settings.threshold}%，已自动压缩上下文`,
+        '并自动压缩了上下文',
+      )
+    } else {
+      await finish(
+        $,
+        key,
+        `5 小时额度已达 ${settings.threshold}%，压缩被跳过：${result.skip}`,
+        `，但压缩被跳过（${result.skip}），上下文没有被压缩`,
+      )
+    }
   } catch {
     if (pending === key && tries < MAX_TRIES) {
       schedule($, RETRY_MS)
     } else if (pending === key) {
-      await finish($, key, `5 小时额度已达 ${settings.threshold}%，自动压缩未能完成`)
+      await finish(
+        $,
+        key,
+        `5 小时额度已达 ${settings.threshold}%，自动压缩未能完成`,
+        '，但自动压缩未能完成，上下文没有被压缩',
+      )
     }
   } finally {
     isRunning = false
